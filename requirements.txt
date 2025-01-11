@@ -1,0 +1,7 @@
+torch
+numpy
+timm==0.4.12
+einops
+ftfy==6.0.3
+scipy
+opencv-python
