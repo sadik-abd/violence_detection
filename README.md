@@ -1,6 +1,6 @@
 # Violence Detection Using Swin Transformer
 
-This project leverages a pre-trained Swin Transformer model to detect violence in videos. Follow the steps below to set up and run the project.
+This project leverages a Video Swin Transformer model to detect violence in videos. Follow the steps below to set up and run the project.
 
 ## Prerequisites
 
