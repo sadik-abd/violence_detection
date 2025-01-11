@@ -729,7 +729,6 @@ class SwinTransformer3D(nn.Module):
     
     def predict(self, x, len_data_sample=1):
         x = self.forward(x)
-        print(x)
         num_segs = x.shape[0] // len_data_sample
         cls_scores = self.average_clip(x, num_segs=num_segs)
         pred_labels = cls_scores.argmax(dim=-1, keepdim=True).detach()
