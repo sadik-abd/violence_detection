@@ -2,7 +2,7 @@ from transforms import *
 from custom_swin import SwinTransformer3D
 import torch
 # Example usage:
-video_path = "../crowded.avi"
+video_path = "your path"
 
 # Build the pipeline
 pipeline = Compose([
