@@ -42,7 +42,7 @@ This project leverages a pre-trained Swin Transformer model to detect violence i
 
 2. Run the detection script:
     ```bash
-    python detect.py
+    python test.py
     ```
 
 
