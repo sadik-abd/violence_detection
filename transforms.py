@@ -386,6 +386,16 @@ class Resize:
         self.keep_ratio = keep_ratio
         self.interpolation = interp_dict[interpolation]
         self.lazy = lazy
+        self.mean=np.array([
+            123.675,
+            116.28,
+            103.53,
+        ])
+        self.std=np.array([
+            58.395,
+            57.12,
+            57.375,
+        ])
 
     def _imresize(self, img, new_w, new_h):
         return cv2.resize(img, (new_w, new_h), interpolation=self.interpolation)
@@ -420,19 +430,10 @@ class Resize:
 
         # Resize each frame
         resized = [self._imresize(img, new_w, new_h) for img in imgs]
-        mean=np.array([
-            123.675,
-            116.28,
-            103.53,
-        ])
-        std=np.array([
-            58.395,
-            57.12,
-            57.375,
-        ])
+        
         normalized_tensors = []
         for img in resized:
-            normalized_tensor = (img - mean[None, None, :]) / std[None, None, :]
+            normalized_tensor = (img - self.mean[None, None, :]) / self.std[None, None, :]
             normalized_tensors.append(normalized_tensor)
         results['imgs'] = normalized_tensors
         results['img_shape'] = (new_h, new_w)
@@ -503,8 +504,7 @@ class FormatShape:
         self.input_format = input_format
 
     def __call__(self, results):
-        for i, img in enumerate(results['imgs']):
-            cv2.imwrite(f"crops/crop{i}.jpg",img)
+        
         imgs = results['imgs']  # list of np.ndarrays: shape [H,W,C]
         # Convert to a single 4D array: [M, H, W, C]
         # M = (num_crops * num_clips * clip_len)
@@ -581,3 +581,64 @@ class PackActionInputs:
 
         return packed_results
 
+
+##################################################
+# Putting it all together in a pipeline
+##################################################
+if __name__ == "__main__":
+    # Example usage:
+    video_path = "../crowded.avi"
+
+    # Build the pipeline
+    pipeline = Compose([
+        OpenCVInit(io_backend='disk', num_threads=1),
+        SampleFrames(clip_len=32, frame_interval=2, num_clips=4, 
+                     temporal_jitter=False, twice_sample=False, 
+                     out_of_bound_opt='loop', test_mode=True),
+        OpenCVDecode(mode='accurate'),
+        Resize(scale=(np.inf, 224), keep_ratio=True, interpolation='bilinear', lazy=False),
+        ThreeCrop(crop_size=(224, 224)),
+        FormatShape(input_format='NCTHW'),
+        PackActionInputs(collect_keys=None, 
+                         meta_keys=('img_shape', 'img_key', 'video_id', 'timestamp'))
+    ])
+
+    # Prepare initial dict
+    data = dict(filename=video_path)
+
+    # Run the pipeline
+    results = pipeline(data)
+
+    # 'results' is now a dict containing:
+    #   {
+    #     'inputs': <torch.Tensor of shape [N, C, T, H, W]>,
+    #     'data_samples': {
+    #         'metainfo': {...}
+    #     }
+    #   }
+    print('Pipeline output keys:', results.keys())
+    if 'inputs' in results:
+        print('inputs.shape:', results['inputs'].shape)
+    if 'data_samples' in results:
+        print('metainfo:', results['data_samples']['metainfo'])
+    from custom_swin import SwinTransformer3D
+    model = SwinTransformer3D(pretrained="../weights/violence_detect/new_swin_fixed.pth",pretrained2d=False,patch_size=(2, 4, 4),
+                 in_chans=3,
+                 embed_dim=96,
+                 depths=[2, 2, 6, 2],
+                 num_heads=[3, 6, 12, 24],
+                 window_size=(8, 7, 7),
+                 mlp_ratio=4.0,
+                 qkv_bias=True,
+                 qk_scale=None,
+                 drop_rate=0.0,
+                 attn_drop_rate=0.0,
+                 drop_path_rate=0.1,
+                 norm_layer=torch.nn.LayerNorm,
+                 patch_norm=True,
+                 frozen_stages=-1)
+    model.init_weights()
+    model.to("cuda")
+    model.eval()
+    with torch.no_grad():
+        print(model.predict(results['inputs'].to("cuda")))
