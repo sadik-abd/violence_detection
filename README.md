@@ -45,9 +45,6 @@ This project leverages a pre-trained Swin Transformer model to detect violence i
     python detect.py
     ```
 
-## Example Output
-
-The script will process the video and display predictions frame by frame, highlighting potential instances of violence. Results can be saved to a file or displayed in real time, depending on your implementation.
 
 ## Contributing
 
