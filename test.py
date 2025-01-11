@@ -49,4 +49,9 @@ model.init_weights()
 model.to("cuda")
 model.eval()
 with torch.no_grad():
-    print(model.predict(results['inputs'].to("cuda")))
+    outp = model.predict(results['inputs'].to("cuda"))
+score, pred = outp
+prob_violence = score[0, 1].item()
+prob_nonviolence = score[0, 0].item()
+predicted_label = pred[0].item()
+print(f"chance of violence {prob_violence}")
