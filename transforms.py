@@ -436,7 +436,7 @@ class Resize:
             pass
 
         # Parallel resizing and normalization using ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        with ThreadPoolExecutor(max_workers=15) as executor:
             normalized_tensors = list(executor.map(
                 lambda img: self._resize_and_normalize(img, new_w, new_h), imgs
             ))
