@@ -1,6 +1,8 @@
 import cv2
 import numpy as np
 import torch
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 #####################################
 # 1. Compose (pipeline container)
@@ -12,10 +14,17 @@ class Compose:
 
     def __call__(self, results):
         for t in self.transforms:
+            # start_time = time.time()
             results = t(results)
+
+            # end_time = time.time()
+            # elapsed_time_ms = (end_time - start_time) * 1000
+            # print(f"Transform: {t.__class__.__name__}, Time taken: {elapsed_time_ms:.2f} ms")
+
             if results is None:
                 return None
         return results
+
 
 class FrameListInit:
     """Initialize from an in-memory list of frames (decoded images).
@@ -120,6 +129,7 @@ class OpenCVInit:
 
         # Get total frames and fps if available
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
         fps = cap.get(cv2.CAP_PROP_FPS)
         if fps == 0:
             fps = None  # Some videos may not report FPS properly
@@ -386,12 +396,12 @@ class Resize:
         self.keep_ratio = keep_ratio
         self.interpolation = interp_dict[interpolation]
         self.lazy = lazy
-        self.mean=np.array([
+        self.mean = np.array([
             123.675,
             116.28,
             103.53,
         ])
-        self.std=np.array([
+        self.std = np.array([
             58.395,
             57.12,
             57.375,
@@ -400,44 +410,41 @@ class Resize:
     def _imresize(self, img, new_w, new_h):
         return cv2.resize(img, (new_w, new_h), interpolation=self.interpolation)
 
+    def _resize_and_normalize(self, img, new_w, new_h):
+        resized_img = self._imresize(img, new_w, new_h)
+        normalized_tensor = (resized_img - self.mean[None, None, :]) / self.std[None, None, :]
+        return normalized_tensor
+
     def __call__(self, results):
         imgs = results['imgs']
         img_h, img_w = results['img_shape']
+        
         if isinstance(self.scale, tuple):
-            # (short_side, long_side) or (inf, something)
             w_scale, h_scale = self.scale
             if w_scale == np.inf:
-                # scale so that the shorter side = h_scale
-                # which is actually the second tuple element
-                # (inf, 224) means: shorter side = 224
                 short_side = min(img_w, img_h)
                 scale_ratio = h_scale / short_side
                 new_w = int(img_w * scale_ratio)
                 new_h = int(img_h * scale_ratio)
             else:
-                # direct (new_w, new_h)
                 new_w, new_h = self.scale
         else:
-            # float scale factor
             new_w = int(img_w * self.scale)
             new_h = int(img_h * self.scale)
 
-        if self.keep_ratio and (w_scale != np.inf):
-            # Just in case we want to maintain ratio in a different scenario
-            # This mimics mmcv.rescale_size with keep_ratio
-            # but we’ll skip an intricate check for simplicity.
+        if self.keep_ratio and (isinstance(self.scale, tuple) and self.scale[0] != np.inf):
             pass
 
-        # Resize each frame
-        resized = [self._imresize(img, new_w, new_h) for img in imgs]
-        
-        normalized_tensors = []
-        for img in resized:
-            normalized_tensor = (img - self.mean[None, None, :]) / self.std[None, None, :]
-            normalized_tensors.append(normalized_tensor)
+        # Parallel resizing and normalization using ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            normalized_tensors = list(executor.map(
+                lambda img: self._resize_and_normalize(img, new_w, new_h), imgs
+            ))
+
         results['imgs'] = normalized_tensors
         results['img_shape'] = (new_h, new_w)
         return results
+
 
 
 ####################################################
@@ -520,7 +527,7 @@ class FormatShape:
         # In MMACTION2, if you have three crops, M is 3 * num_clips * clip_len
         # Let n_crops = M / (num_clips*clip_len)
         n_crops = M // (num_clips * clip_len)
-
+        
         imgs = imgs.reshape((n_crops, num_clips, clip_len, *imgs.shape[1:]))
 
         # Now transpose to [n_crops, num_clips, C, clip_len, H, W]
@@ -587,7 +594,7 @@ class PackActionInputs:
 ##################################################
 if __name__ == "__main__":
     # Example usage:
-    video_path = "../crowded.avi"
+    video_path = "../test.mp4"
 
     # Build the pipeline
     pipeline = Compose([
@@ -622,7 +629,7 @@ if __name__ == "__main__":
     if 'data_samples' in results:
         print('metainfo:', results['data_samples']['metainfo'])
     from custom_swin import SwinTransformer3D
-    model = SwinTransformer3D(pretrained="../weights/violence_detect/new_swin_fixed.pth",pretrained2d=False,patch_size=(2, 4, 4),
+    model = SwinTransformer3D(pretrained="../weights/violence_detect/violence_swin.pth",pretrained2d=False,patch_size=(2, 4, 4),
                  in_chans=3,
                  embed_dim=96,
                  depths=[2, 2, 6, 2],
